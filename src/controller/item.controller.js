@@ -1,41 +1,36 @@
 const path = require("path");
-const { v4: uuidv4 } = require("uuid");
-const { readFileData, writeFileData } = require("../middleware/fileHandler");
+const { readFileData, writeFileData } = require("../utils/fileHandler");
 const { sendResponse } = require("../utils/responseHelper");
-const {
-  validateData,
-  isValidUUID,
-  isUniqueName,
-  isNameExists,
-} = require("../validations/item.validate");
-const { sendEmail } = require("../utils/email");
-const Logger = require("../service/logger");
-
+const { isUniqueName, isNameExists } = require("../middleware/item.validate");
+const { sendEmail } = require("../service/email");
+const Logger = require("../utils/logger");
+const { Item } = require("../models/item");
+process.on("unhandledRejection", (err) => {
+  console.log(err);
+});
 function getItems(req, res) {
   try {
     const sFilePath = path.join(__dirname, "../data.json");
     readFileData(sFilePath, (err, data) => {
       if (err) {
-        return sendResponse(res, 404, "Data not found!", null);
+        return sendResponse(res, "NotFound", "Data not found!");
       }
-      sendResponse(res, 200, "Data fetched successfully!", data);
+      return sendResponse(res, "OK", "Data fetched successfully!", data);
     });
   } catch (err) {
-    sendResponse(res, 500, "Something went wrong!", null);
+    sendResponse(res, "InternalServerError", "Something went wrong!");
   }
 }
 
 function getItemID(req, res) {
   try {
-    const iId = req.params.iId;
-    if (!isValidUUID(iId)) {
-      return sendResponse(res, 400, "Invalid ID");
-    }
+    const { iId } = req.params;
+
     const sFilePath = path.join(__dirname, "../data.json");
 
     readFileData(sFilePath, (err, data) => {
       if (err) {
-        return sendResponse(res, 500, "Server Error");
+        return sendResponse(res, "InternalServerError", "Server Error");
       }
 
       const oItem = data.find((obj) => obj.iId === iId);
@@ -43,16 +38,16 @@ function getItemID(req, res) {
       if (oItem) {
         return sendResponse(
           res,
-          200,
+          "OK",
           "Data fetched successfully",
           (data = oItem)
         );
       } else {
-        return sendResponse(res, 404, "Item not found");
+        return sendResponse(res, "NotFound", "Item not found");
       }
     });
   } catch (err) {
-    sendResponse(res, 500, "Something went wrong!", null);
+    sendResponse(res, "InternalServerError", "Something went wrong!");
   }
 }
 function getPaginatedItem(req, res) {
@@ -61,7 +56,11 @@ function getPaginatedItem(req, res) {
 
     readFileData(sFilePath, (err, data) => {
       if (err) {
-        return sendResponse(res, 500, "Internal Server Error");
+        return sendResponse(
+          res,
+          "InternalServerError",
+          "Internal Server Error"
+        );
       }
 
       const page = parseInt(req.query.page) || 1;
@@ -71,9 +70,9 @@ function getPaginatedItem(req, res) {
 
       const paginatedData = data.slice(startIndex, endIndex);
 
-      sendResponse(
+      return sendResponse(
         res,
-        200,
+        "OK",
         "Data fetched successfully",
         (data = {
           page,
@@ -85,116 +84,99 @@ function getPaginatedItem(req, res) {
       );
     });
   } catch (err) {
-    sendResponse(res, 500, "Something went wrong!", null);
+    sendResponse(res, "InternalServerError", "Something went wrong!");
   }
 }
 function deleteItems(req, res) {
   try {
-    const iId = req.params.iId;
-    if (!isValidUUID(iId)) {
-      return sendResponse(res, 400, "Invalid ID");
-    }
+    const { iId } = req.params;
+
     const sFilePath = path.join(__dirname, "../data.json");
 
     readFileData(sFilePath, (err, data) => {
       if (err) {
-        return sendResponse(res, 500, "Error reading data");
+        return sendResponse(res, "InternalServerError", "Error reading data");
       }
 
       const aFilteredData = data.filter((item) => item.iId !== iId);
 
       if (aFilteredData.length === data.length) {
-        return sendResponse(res, 404, "Item not found");
+        return sendResponse(res, "NotFound", "Item not found");
       }
 
       writeFileData(sFilePath, aFilteredData, (writeErr) => {
         if (writeErr) {
-          return sendResponse(res, 500, "Error deleting data");
+          return sendResponse(
+            res,
+            "InternalServerError",
+            "Error deleting data"
+          );
         }
 
-        sendResponse(res, 200, "Data deleted successfully");
+        return sendResponse(res, "OK", "Data deleted successfully");
       });
       Logger.log(` Item deleted: ${JSON.stringify(aFilteredData)}`);
     });
   } catch (err) {
-    sendResponse(res, 500, "Something went wrong!", null);
+    sendResponse(res, "InternalServerError", "Something went wrong!");
   }
 }
 
 function postItems(req, res) {
   try {
-    const oNewItem = req.body;
-    if (!oNewItem || Object.keys(oNewItem).length === 0) {
-      return sendResponse(res, 400, "Invalid or empty data provided");
-    }
+    const { sName, nPrice, nQuantity, sStatus } = req.body;
 
-    const error = validateData(oNewItem);
-    if (error) {
-      return sendResponse(res, 400, "Invalid data");
-    }
     const sFilePath = path.join(__dirname, "../data.json");
 
     readFileData(sFilePath, (err, data) => {
       if (err) {
-        return sendResponse(res, 500, "Error reading data");
+        return sendResponse(res, "InternalServerErro", "Error reading data");
       }
 
-      // console.log("New Item Name:", oNewItem.sName);
-
-      if (isNameExists(data, oNewItem.sName)) {
-        return sendResponse(res, 400, "Name already exists");
+      if (isNameExists(data, sName)) {
+        return sendResponse(res, "BadRequest", "Name already exists");
       }
+      const oData = new Item(sName, nPrice, nQuantity, sStatus);
 
-      oNewItem.iId = uuidv4();
-      oNewItem.dCreatedAt = new Date().toLocaleString();
-      oNewItem.dUpdatedAt = oNewItem.dCreatedAt;
-
-      data.push(oNewItem);
+      data.push(oData);
 
       writeFileData(sFilePath, data, (writeErr) => {
         if (writeErr) {
-          return sendResponse(res, 500, "Error saving data");
+          return sendResponse(res, "InternalServerError", "Error saving data");
         }
-        sendResponse(res, 201, "Item created successfully", (data = oNewItem));
-        console.log(` Sending email to: pkripa42@gmail.com`);
-        sendEmail("pkripa42@gmail.com", oNewItem);
-
-        try {
-          Logger.log(`New item created: ${JSON.stringify(oNewItem)}`);
-        } catch (error) {
-          console.error("Logger Error:", error);
-        }
+        return sendResponse(
+          res,
+          "Create",
+          "Item created successfully",
+          (data = oData)
+        );
       });
+      console.log(` Sending email to: pkripa42@gmail.com`);
+      sendEmail("pkripa42@gmail.com", oData);
+
+      Logger.log(`New item created: ${JSON.stringify(oData)}`);
     });
   } catch (err) {
-    sendResponse(res, 500, "Something went wrong!", null);
+    sendResponse(res, "InternalServerError", "Something went wrong!");
+    console.log(err.message);
   }
 }
 
 function putItems(req, res) {
   try {
-    const iId = req.params.iId;
-    if (!isValidUUID(iId)) {
-      return sendResponse(res, 400, "Invalid ID");
-    }
+    const { iId } = req.params;
     const sFilePath = path.join(__dirname, "../data.json");
-
     const oUpdatedItem = req.body;
-    const error = validateData(oUpdatedItem);
-    if (error) {
-      return sendResponse(res, 400, "Invalid data");
-    }
-    oUpdatedItem.dUpdatedAt = new Date().toLocaleString();
 
     readFileData(sFilePath, (err, data) => {
       if (err) {
-        return sendResponse(res, 500, "Error reading data");
+        return sendResponse(res, "InternalServerError", "Error reading data");
       }
 
       const aItemIndex = data.findIndex((item) => item.iId === iId);
 
       if (aItemIndex === -1) {
-        return sendResponse(res, 404, "Item not found");
+        return sendResponse(res, "NotFound", "Item not found");
       }
       const existingItem = data[aItemIndex];
 
@@ -202,19 +184,27 @@ function putItems(req, res) {
         oUpdatedItem.sName !== existingItem.sName &&
         !isUniqueName(data, oUpdatedItem.sName, iId)
       ) {
-        return sendResponse(res, 400, "Name already exists");
+        return sendResponse(res, "BadRequest", "Name already exists");
       }
 
-      data[aItemIndex] = { ...data[aItemIndex], ...oUpdatedItem };
+      data[aItemIndex].sName = oUpdatedItem.sName;
+      data[aItemIndex].nPrice = oUpdatedItem.nPrice;
+      data[aItemIndex].nQuantity = oUpdatedItem.nQuantity;
+      data[aItemIndex].sStatus = oUpdatedItem.sStatus;
+      data[aItemIndex].dUpdatedAt = new Date();
 
       writeFileData(sFilePath, data, (writeErr) => {
         if (writeErr) {
-          return sendResponse(res, 500, "Error updating data");
+          return sendResponse(
+            res,
+            "InternalServerError",
+            "Error updating data"
+          );
         }
 
         return sendResponse(
           res,
-          200,
+          "OK",
           "Data updated successfully",
           (data = data[aItemIndex])
         );
@@ -222,7 +212,7 @@ function putItems(req, res) {
       Logger.log(` Item updated: ${JSON.stringify(data[aItemIndex])}`);
     });
   } catch (err) {
-    res.status(500).json({ message: "Something went wrong!" });
+    sendResponse(res, "InternalServerError", "Something went wrong!");
   }
 }
 

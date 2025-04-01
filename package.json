@@ -20,8 +20,10 @@
   },
   "homepage": "https://github.com/krupa625/Express_CRUD_API#readme",
   "dependencies": {
+    "body-parser": "^2.2.0",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
+    "express-validator": "^7.2.1",
     "nodemailer": "^6.10.0",
     "nodemon": "^3.1.9",
     "uuid": "^11.1.0"
